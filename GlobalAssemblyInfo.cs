@@ -2,7 +2,7 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
-[assembly: AssemblyConfiguration("")]
+[assembly: AssemblyConfiguration("master")]
 [assembly: AssemblyCompany("Company webcast")]
 [assembly: AssemblyProduct("Base64Encoder")]
 [assembly: AssemblyCopyright("Copyright © Ramon Smits 2012")]

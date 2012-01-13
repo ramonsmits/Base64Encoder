@@ -32,7 +32,18 @@ Besides the performance enhancements I also added support for:
 
 # Performance
 
-So lets talk about performance! In the 'release' build it basically.
+So lets talk about performance! As why would you use it when you can use the version of the .net framework?
+
+## FromBase64
+
+Base64 encoding is about twice as fast compared to Convert.ToBase64String. I did not expect that it is
+much faster that the framework itself! This is probably because the current implementation does not do
+any validation on the incoming Base64 string.
+
+## ToBase64
+
+Base64 decoding performance is almost equal to Convert.FromBase64String. Sometimes its faster but usually
+performance can be assumed equal.
 
 
 # Knows issues

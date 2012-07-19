@@ -2,3 +2,5 @@
 *.suo
 */obj
 */bin
+_*
+*.ncrunchsolution

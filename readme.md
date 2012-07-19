@@ -29,6 +29,13 @@ Besides the performance enhancements I also added support for:
  * Support for a couple of 'standard' Base64 encoding methods like xml and url encoding more information
    can be found at : http://en.wikipedia.org/wiki/Base64
 
+# Base7, Base10, Base16, Base52, Base62
+
+The name of the library is called Base64Encoder but it also provides other base converters. All converters
+inherit from a base class BaseCalculater which can convert any byte array to/from a specific base encoding
+character set. I needed a Base52 encoder so that is the reason that I refactored the code to support this
+and I added Base7, Base10 and Base16 just for demo purpose. The Base62 is included because it is pretty
+common as it solves the web incompatibilities of Base64 encoding.
 
 # Performance
 

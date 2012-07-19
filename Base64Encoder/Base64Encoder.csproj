@@ -51,7 +51,12 @@
     <Compile Include="..\GlobalAssemblyInfo.cs">
       <Link>GlobalAssemblyInfo.cs</Link>
     </Compile>
+    <Compile Include="Base10Encoder.cs" />
+    <Compile Include="Base16Encoder.cs" />
+    <Compile Include="Base52Encoder.cs" />
+    <Compile Include="Base62Encoder.cs" />
     <Compile Include="Base64Encoder.cs" />
+    <Compile Include="Base7Encoder.cs" />
     <Compile Include="BaseEncoder.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>

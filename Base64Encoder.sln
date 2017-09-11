@@ -1,6 +1,8 @@
 ﻿
-Microsoft Visual Studio Solution File, Format Version 11.00
-# Visual Studio 2010
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 15
+VisualStudioVersion = 15.0.26730.12
+MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Base64Encoder", "Base64Encoder\Base64Encoder.csproj", "{57EE7903-A204-45F8-987D-EC1221214D76}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Base64EncoderTests", "Base64EncoderTests\Base64EncoderTests.csproj", "{0DC15244-D254-4804-9E1F-D2EE2FC9720A}"
@@ -11,6 +13,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 		GlobalAssemblyInfo.cs = GlobalAssemblyInfo.cs
 		readme.md = readme.md
 	EndProjectSection
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Base64EncoderPerformance", "Base64EncoderPerformance\Base64EncoderPerformance.csproj", "{6AE755ED-236A-44C0-B184-7CB259B44D90}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -26,8 +30,15 @@ Global
 		{0DC15244-D254-4804-9E1F-D2EE2FC9720A}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{0DC15244-D254-4804-9E1F-D2EE2FC9720A}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{0DC15244-D254-4804-9E1F-D2EE2FC9720A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6AE755ED-236A-44C0-B184-7CB259B44D90}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6AE755ED-236A-44C0-B184-7CB259B44D90}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6AE755ED-236A-44C0-B184-7CB259B44D90}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6AE755ED-236A-44C0-B184-7CB259B44D90}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {AF5C82DF-7889-41A4-B7F6-F6983D22497B}
 	EndGlobalSection
 EndGlobal

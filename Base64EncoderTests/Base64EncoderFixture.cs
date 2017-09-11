@@ -1,6 +1,10 @@
 ﻿using System;
 using System.Collections;
 using System.Diagnostics;
+using BenchmarkDotNet.Attributes;
+using BenchmarkDotNet.Attributes.Jobs;
+using BenchmarkDotNet.Running;
+using BenchmarkDotNet.Toolchains.InProcess;
 using NUnit.Framework;
 
 namespace Exyll
@@ -14,7 +18,7 @@ namespace Exyll
 
 		static Base64EncoderFixture()
 		{
-			Random r = new Random();
+			Random r = new Random(1337);
 			for (int i = 0; i < Count; i++)
 			{
 				data[i] = new byte[i];
@@ -82,80 +86,6 @@ namespace Exyll
 		public void FromBase64(string s)
 		{
 			CollectionAssert.AreEqual(Convert.FromBase64String(s), Base64Encoder.Default.FromBase(s));
-		}
-
-		int loops = 1000000;
-#if DEBUG
-		static bool IsDebug = true;
-#else
-				static bool IsDebug = false;
-#endif
-
-		[Test, Explicit]
-		[TestCase]
-		[TestCase]
-		[TestCase]
-		public void Performance_ToBase64()
-		{
-			if (IsDebug) Assert.Inconclusive("Performance comparison only useful for non debug builds.");
-
-			var b64Encoder = Base64Encoder.Default;
-
-			var t1 = Stopwatch.StartNew();
-			for (int i = 0; i < loops; i++)
-			{
-				for (int j = 0; j < Count; j++)
-				{
-					string s1 = Convert.ToBase64String(data[j]);
-				}
-			}
-			t1.Stop();
-
-			var t2 = Stopwatch.StartNew();
-			for (int i = 0; i < loops; i++)
-			{
-				for (int j = 0; j < Count; j++)
-				{
-					string s2 = b64Encoder.ToBase(data[j]);
-				}
-			}
-			t2.Stop();
-
-			Assert.LessOrEqual(t2.Elapsed, t1.Elapsed);
-			Console.WriteLine("{0} {1}", t2.Elapsed, t1.Elapsed);
-		}
-
-		[Test, Explicit]
-		[TestCase]
-		[TestCase]
-		[TestCase]
-		public void Performance_FromBase64()
-		{
-			if (IsDebug) Assert.Inconclusive("Performance comparison only useful for non debug builds.");
-
-			var b64Encoder = Base64Encoder.Default;
-
-			var t1 = Stopwatch.StartNew();
-			for (int i = 0; i < loops; i++)
-			{
-				for (int j = 0; j < Count; j++)
-				{
-					Convert.FromBase64String(strings[j]);
-				}
-			}
-			t1.Stop();
-			var t2 = Stopwatch.StartNew();
-			for (int i = 0; i < loops; i++)
-			{
-				for (int j = 0; j < Count; j++)
-				{
-					b64Encoder.FromBase(strings[j]);
-				}
-			}
-			t2.Stop();
-
-			Assert.LessOrEqual(t2.Elapsed, t1.Elapsed);
-			Console.WriteLine("{0} {1}", t2.Elapsed, t1.Elapsed);
 		}
 	}
 }

@@ -1,16 +1,16 @@
 # About
 
 Once in a while I needed to use a different style of Base64 encoding then provided by the .net framework
-via Convert.ToBase64String and Convert.FromBase64String. Currently there are two alternatives where the
-first are the other conversion methods Convert.ToBase64CharArray and Convert.FromBase64CharArray but these
-are still very inefficient when you need to combine then with character replacement pre/post-processing.
-The second is the use of FromBase64Transform and ToBase64Transform but both operate on streams and both
+via `Convert.ToBase64String` and `Convert.FromBase64String`. Currently there are two alternatives where the
+first are the other conversion methods `Convert.ToBase64CharArray` and `Convert.FromBase64CharArray` but these
+are still very inefficient when you need to combine them with character replacement pre/post-processing.
+The second is the use of `FromBase64Transform` and `ToBase64Transform` but both operate on streams and both
 don't support other Base64 encodings.
 
-I started browsing for code and found the following two articles by Timm Martin and 'wchvic '
+I started browsing for code and found the following two articles by Timm Martin and 'wchvic'
 
-http://www.csharp411.com/convert-binary-to-base64-string/
-http://www.codeproject.com/KB/cs/base64encdec.aspx
+ * http://www.csharp411.com/convert-binary-to-base64-string/
+ * http://www.codeproject.com/KB/cs/base64encdec.aspx
 
 Both work and the version by Timm is faster but browsing the code made me think that it could be optimized
 even further.
@@ -43,7 +43,7 @@ So lets talk about performance! As why would you use it when you can use the ver
 
 ## FromBase64
 
-Base64 encoding is about twice as fast compared to Convert.ToBase64String. I did not expect that it is
+Base64 **encoding is about twice as fast compared to Convert.ToBase64String**. I did not expect that it is
 much faster that the framework itself! This is probably because the current implementation does not do
 any validation on the incoming Base64 string.
 
@@ -55,12 +55,12 @@ performance can be assumed equal.
 
 # Knows issues
 
- * The string.ToCharArray seems to cause a performance problem but because the code is currently as fast
+ * The `string.ToCharArray` seems to cause a performance problem but because the code is currently as fast
    as Convert (for ToBase64) or significantly faster (FromBase64, two times faster) so it currently does
    not have my priority.
- * The FromBase64 method does not do *any* validation! So if you need to convert external encoded Base64
+ * The `FromBase64` method does not do *any* validation! So if you need to convert external encoded Base64
    strings then make sure you have validated the Base64 string!
-   The readonly field Base64Encoder.CharacterSet can help validate your Base64 input.
+   The readonly field `Base64Encoder.CharacterSet` can help validate your Base64 input.
 
 
 # Future

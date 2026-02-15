@@ -4,7 +4,7 @@
 	public class BaseEncoder
 	{
 		const char PaddingChar = '=';
-		readonly byte[] Map;
+		protected readonly byte[] Map;
 
 		public readonly char[] CharacterSet;
 		public readonly bool PaddingEnabled;
@@ -16,7 +16,7 @@
 			Map = Create(CharacterSet);
 		}
 
-		public string ToBase(byte[] data)
+		public virtual string ToBase(byte[] data)
 		{
 			int length;
 			if (data == null || 0 == (length = data.Length))
@@ -79,7 +79,7 @@
 			}
 		}
 
-		public byte[] FromBase(string data)
+		public virtual byte[] FromBase(string data)
 		{
 			int length = data == null ? 0 : data.Length;
 

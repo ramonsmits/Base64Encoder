@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 
 namespace Exyll
 {
@@ -7,13 +6,15 @@ namespace Exyll
 	public class BaseEncoder
 	{
 		const char PaddingChar = '=';
-		protected readonly byte[] Map;
+		readonly byte[] Map;
 
 		public readonly char[] CharacterSet;
 		public readonly bool PaddingEnabled;
 
 		readonly int _base;
 		readonly int _bitsPerChar;
+		readonly int _charMask;
+		readonly int _charsPerBlock;
 		readonly bool _isPowerOfTwo;
 
 		public BaseEncoder(char[] characterSet, bool paddingEnabled)
@@ -27,6 +28,8 @@ namespace Exyll
 			{
 				int temp = _base;
 				while (temp > 1) { temp >>= 1; _bitsPerChar++; }
+				_charMask = (1 << _bitsPerChar) - 1;
+				_charsPerBlock = Lcm(8, _bitsPerChar) / _bitsPerChar;
 			}
 
 			Map = CreateMap(CharacterSet);
@@ -38,10 +41,9 @@ namespace Exyll
 			if (data == null || 0 == (length = data.Length))
 				return string.Empty;
 
-			if (_isPowerOfTwo)
-				return BitGroupEncode(data, length);
-
-			return ArithmeticEncode(data, length);
+			return _isPowerOfTwo
+				? BitGroupEncode(data, length)
+				: ArithmeticEncode(data, length);
 		}
 
 		public virtual byte[] FromBase(string data)
@@ -51,27 +53,21 @@ namespace Exyll
 			if (length == 0)
 				return new byte[0];
 
-			if (_isPowerOfTwo)
-				return BitGroupDecode(data, length);
-
-			return ArithmeticDecode(data, length);
+			return _isPowerOfTwo
+				? BitGroupDecode(data, length)
+				: ArithmeticDecode(data, length);
 		}
 
 		unsafe string BitGroupEncode(byte[] data, int length)
 		{
 			int bitsPerChar = _bitsPerChar;
-			int charMask = (1 << bitsPerChar) - 1;
+			int charMask = _charMask;
 
-			int totalBits = length * 8;
-			int charCount = (totalBits + bitsPerChar - 1) / bitsPerChar;
+			int charCount = (length * 8 + bitsPerChar - 1) / bitsPerChar;
+			int paddedCount = (charCount + _charsPerBlock - 1) / _charsPerBlock * _charsPerBlock;
+			int allocLen = PaddingEnabled ? paddedCount : charCount;
 
-			// Calculate padded length (round up to block boundary)
-			int lcm = Lcm(8, bitsPerChar);
-			int charsPerBlock = lcm / bitsPerChar;
-			int paddedCharCount = ((charCount + charsPerBlock - 1) / charsPerBlock) * charsPerBlock;
-
-			int outputLen = PaddingEnabled ? paddedCharCount : charCount;
-			char[] output = new char[PaddingEnabled ? paddedCharCount : charCount];
+			char[] output = new char[allocLen];
 
 			fixed (byte* _d = data)
 			fixed (char* _cs = CharacterSet)
@@ -95,36 +91,29 @@ namespace Exyll
 					}
 				}
 
-				// Handle remaining bits (shift left to fill the character)
 				if (bitsInBuffer > 0)
-				{
 					*sp++ = _cs[(bitBuffer << (bitsPerChar - bitsInBuffer)) & charMask];
-				}
 
-				// Add padding characters
 				if (PaddingEnabled)
 				{
-					while (sp < _out + paddedCharCount)
+					char* end = _out + paddedCount;
+					while (sp < end)
 						*sp++ = PaddingChar;
 				}
 			}
 
-			return new string(output, 0, outputLen);
+			return new string(output, 0, allocLen);
 		}
 
 		unsafe byte[] BitGroupDecode(string data, int length)
 		{
 			int bitsPerChar = _bitsPerChar;
 
-			// Strip padding
 			int dataChars = length;
 			while (dataChars > 0 && data[dataChars - 1] == PaddingChar)
 				dataChars--;
 
-			int totalBits = dataChars * bitsPerChar;
-			int byteCount = totalBits / 8;
-
-			byte[] result = new byte[byteCount];
+			byte[] result = new byte[dataChars * bitsPerChar / 8];
 
 			fixed (char* _p = data)
 			fixed (byte* _d = result)
@@ -153,7 +142,6 @@ namespace Exyll
 
 		string ArithmeticEncode(byte[] data, int length)
 		{
-			// Count leading zero bytes
 			int leadingZeros = 0;
 			while (leadingZeros < length && data[leadingZeros] == 0)
 				leadingZeros++;
@@ -161,12 +149,10 @@ namespace Exyll
 			if (leadingZeros == length)
 				return new string(CharacterSet[0], length);
 
-			// Work with a copy for in-place division
 			byte[] input = new byte[length];
 			Array.Copy(data, input, length);
 
-			// Upper bound for output size
-			char[] result = new char[length * 8]; // generous upper bound
+			char[] result = new char[length * 8];
 			int resultIndex = result.Length;
 
 			int startIndex = leadingZeros;
@@ -188,7 +174,6 @@ namespace Exyll
 				startIndex = newStart;
 			}
 
-			// Prepend leading zero digits
 			for (int i = 0; i < leadingZeros; i++)
 				result[--resultIndex] = CharacterSet[0];
 
@@ -197,7 +182,6 @@ namespace Exyll
 
 		byte[] ArithmeticDecode(string data, int length)
 		{
-			// Count leading zero digits (first character in charset)
 			char zeroChar = CharacterSet[0];
 			int leadingZeros = 0;
 			while (leadingZeros < length && data[leadingZeros] == zeroChar)
@@ -206,13 +190,11 @@ namespace Exyll
 			if (leadingZeros == length)
 				return new byte[length];
 
-			// Convert characters to digit values
 			byte[] digits = new byte[length];
 			for (int i = 0; i < length; i++)
 				digits[i] = Map[data[i]];
 
-			// Upper bound for output size
-			byte[] result = new byte[length * 2]; // generous upper bound
+			byte[] result = new byte[length * 2];
 			int resultIndex = result.Length;
 
 			int startIndex = leadingZeros;
@@ -234,7 +216,6 @@ namespace Exyll
 				startIndex = newStart;
 			}
 
-			// Prepend leading zero bytes
 			for (int i = 0; i < leadingZeros; i++)
 				result[--resultIndex] = 0;
 
@@ -256,9 +237,7 @@ namespace Exyll
 			byte[] map = new byte[maxChar + 1];
 
 			for (byte i = 0; i < characterSet.Length; i++)
-			{
 				map[characterSet[i]] = i;
-			}
 
 			return map;
 		}

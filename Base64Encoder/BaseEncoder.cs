@@ -1,159 +1,279 @@
 using System;
+using System.Buffers;
 
-namespace Exyll
+namespace Exyll;
+
+/// <remarks>Based on http://www.csharp411.com/convert-binary-to-base64-string/</remarks>
+public class BaseEncoder
 {
-	/// <remarks>Based on http://www.csharp411.com/convert-binary-to-base64-string/</remarks>
-	public class BaseEncoder
+	const char PaddingChar = '=';
+	const int StackAllocThreshold = 256;
+
+	readonly byte[] _map;
+
+	public readonly char[] CharacterSet;
+	public readonly bool PaddingEnabled;
+
+	readonly int _base;
+	readonly int _bitsPerChar;
+	readonly int _charMask;
+	readonly int _charsPerBlock;
+	readonly bool _isPowerOfTwo;
+
+	public BaseEncoder(char[] characterSet, bool paddingEnabled)
 	{
-		const char PaddingChar = '=';
-		readonly byte[] Map;
+		PaddingEnabled = paddingEnabled;
+		CharacterSet = characterSet;
+		_base = characterSet.Length;
+		_isPowerOfTwo = (_base & (_base - 1)) == 0 && _base > 1;
 
-		public readonly char[] CharacterSet;
-		public readonly bool PaddingEnabled;
-
-		readonly int _base;
-		readonly int _bitsPerChar;
-		readonly int _charMask;
-		readonly int _charsPerBlock;
-		readonly bool _isPowerOfTwo;
-
-		public BaseEncoder(char[] characterSet, bool paddingEnabled)
+		if (_isPowerOfTwo)
 		{
-			PaddingEnabled = paddingEnabled;
-			CharacterSet = characterSet;
-			_base = characterSet.Length;
-			_isPowerOfTwo = (_base & (_base - 1)) == 0 && _base > 1;
-
-			if (_isPowerOfTwo)
-			{
-				int temp = _base;
-				while (temp > 1) { temp >>= 1; _bitsPerChar++; }
-				_charMask = (1 << _bitsPerChar) - 1;
-				_charsPerBlock = Lcm(8, _bitsPerChar) / _bitsPerChar;
-			}
-
-			Map = CreateMap(CharacterSet);
+			int temp = _base;
+			while (temp > 1) { temp >>= 1; _bitsPerChar++; }
+			_charMask = (1 << _bitsPerChar) - 1;
+			_charsPerBlock = Lcm(8, _bitsPerChar) / _bitsPerChar;
 		}
 
-		public virtual string ToBase(byte[] data)
-		{
-			int length;
-			if (data == null || 0 == (length = data.Length))
-				return string.Empty;
+		_map = CreateMap(characterSet);
+	}
 
-			return _isPowerOfTwo
-				? BitGroupEncode(data, length)
-				: ArithmeticEncode(data, length);
+	public virtual string ToBase(byte[]? data)
+	{
+		if (data is null || data.Length == 0) return string.Empty;
+		return ToBase((ReadOnlySpan<byte>)data);
+	}
+
+	public string ToBase(ReadOnlySpan<byte> data)
+	{
+		if (data.IsEmpty) return string.Empty;
+		return _isPowerOfTwo ? BitGroupEncode(data) : ArithmeticEncode(data);
+	}
+
+	public virtual byte[] FromBase(string? data)
+	{
+		if (string.IsNullOrEmpty(data)) return [];
+		return FromBase(data.AsSpan());
+	}
+
+	public byte[] FromBase(ReadOnlySpan<char> data)
+	{
+		if (data.IsEmpty) return [];
+		return _isPowerOfTwo ? BitGroupDecode(data) : ArithmeticDecode(data);
+	}
+
+	/// <summary>Encodes bytes into a caller-provided character buffer.</summary>
+	public bool TryEncode(ReadOnlySpan<byte> source, Span<char> destination, out int charsWritten)
+	{
+		charsWritten = 0;
+		if (source.IsEmpty) return true;
+
+		int needed = GetMaxEncodedLength(source.Length);
+		if (destination.Length < needed) return false;
+
+		if (_isPowerOfTwo)
+			BitGroupEncode(source, destination, out charsWritten);
+		else
+			ArithmeticEncode(source, destination, out charsWritten);
+
+		return true;
+	}
+
+	/// <summary>Decodes characters into a caller-provided byte buffer.</summary>
+	public bool TryDecode(ReadOnlySpan<char> source, Span<byte> destination, out int bytesWritten)
+	{
+		bytesWritten = 0;
+		if (source.IsEmpty) return true;
+
+		if (_isPowerOfTwo)
+		{
+			int needed = GetDecodedLength(source);
+			if (destination.Length < needed) return false;
+			BitGroupDecode(source, destination, out bytesWritten);
+		}
+		else
+		{
+			// Arithmetic: decode to temp, then copy
+			byte[] decoded = ArithmeticDecode(source);
+			if (destination.Length < decoded.Length) return false;
+			decoded.CopyTo(destination);
+			bytesWritten = decoded.Length;
 		}
 
-		public virtual byte[] FromBase(string data)
+		return true;
+	}
+
+	/// <summary>Returns the maximum number of characters needed to encode the given number of bytes.</summary>
+	public int GetMaxEncodedLength(int byteCount)
+	{
+		if (byteCount == 0) return 0;
+
+		if (_isPowerOfTwo)
 		{
-			int length = data == null ? 0 : data.Length;
-
-			if (length == 0)
-				return new byte[0];
-
-			return _isPowerOfTwo
-				? BitGroupDecode(data, length)
-				: ArithmeticDecode(data, length);
+			int charCount = (byteCount * 8 + _bitsPerChar - 1) / _bitsPerChar;
+			return PaddingEnabled
+				? (charCount + _charsPerBlock - 1) / _charsPerBlock * _charsPerBlock
+				: charCount;
 		}
 
-		unsafe string BitGroupEncode(byte[] data, int length)
+		// Arithmetic: upper bound
+		return (int)(byteCount * 8.0 / Math.Log2(_base)) + byteCount + 1;
+	}
+
+	/// <summary>Returns the exact number of bytes that the given encoded data will decode to.</summary>
+	public int GetDecodedLength(ReadOnlySpan<char> data)
+	{
+		if (data.IsEmpty) return 0;
+
+		if (_isPowerOfTwo)
 		{
-			int bitsPerChar = _bitsPerChar;
-			int charMask = _charMask;
-
-			int charCount = (length * 8 + bitsPerChar - 1) / bitsPerChar;
-			int paddedCount = (charCount + _charsPerBlock - 1) / _charsPerBlock * _charsPerBlock;
-			int allocLen = PaddingEnabled ? paddedCount : charCount;
-
-			char[] output = new char[allocLen];
-
-			fixed (byte* _d = data)
-			fixed (char* _cs = CharacterSet)
-			fixed (char* _out = output)
-			{
-				byte* d = _d;
-				char* sp = _out;
-
-				int bitBuffer = 0;
-				int bitsInBuffer = 0;
-
-				for (int i = 0; i < length; i++)
-				{
-					bitBuffer = (bitBuffer << 8) | *d++;
-					bitsInBuffer += 8;
-
-					while (bitsInBuffer >= bitsPerChar)
-					{
-						bitsInBuffer -= bitsPerChar;
-						*sp++ = _cs[(bitBuffer >> bitsInBuffer) & charMask];
-					}
-				}
-
-				if (bitsInBuffer > 0)
-					*sp++ = _cs[(bitBuffer << (bitsPerChar - bitsInBuffer)) & charMask];
-
-				if (PaddingEnabled)
-				{
-					char* end = _out + paddedCount;
-					while (sp < end)
-						*sp++ = PaddingChar;
-				}
-			}
-
-			return new string(output, 0, allocLen);
-		}
-
-		unsafe byte[] BitGroupDecode(string data, int length)
-		{
-			int bitsPerChar = _bitsPerChar;
-
-			int dataChars = length;
+			int dataChars = data.Length;
 			while (dataChars > 0 && data[dataChars - 1] == PaddingChar)
 				dataChars--;
-
-			byte[] result = new byte[dataChars * bitsPerChar / 8];
-
-			fixed (char* _p = data)
-			fixed (byte* _d = result)
-			{
-				char* p = _p;
-				byte* dp = _d;
-
-				int bitBuffer = 0;
-				int bitsInBuffer = 0;
-
-				for (int i = 0; i < dataChars; i++)
-				{
-					bitBuffer = (bitBuffer << bitsPerChar) | Map[*p++];
-					bitsInBuffer += bitsPerChar;
-
-					while (bitsInBuffer >= 8)
-					{
-						bitsInBuffer -= 8;
-						*dp++ = (byte)((bitBuffer >> bitsInBuffer) & 0xFF);
-					}
-				}
-			}
-
-			return result;
+			return dataChars * _bitsPerChar / 8;
 		}
 
-		string ArithmeticEncode(byte[] data, int length)
+		// Arithmetic: can't compute without decoding
+		return ArithmeticDecode(data).Length;
+	}
+
+	// === Bit-group path (power-of-2 bases) ===
+
+	string BitGroupEncode(ReadOnlySpan<byte> data)
+	{
+		int allocLen = GetMaxEncodedLength(data.Length);
+
+		char[]? rented = null;
+		Span<char> buffer = allocLen <= StackAllocThreshold
+			? stackalloc char[allocLen]
+			: (rented = ArrayPool<char>.Shared.Rent(allocLen));
+
+		try
 		{
-			int leadingZeros = 0;
-			while (leadingZeros < length && data[leadingZeros] == 0)
-				leadingZeros++;
+			BitGroupEncode(data, buffer, out int written);
+			return new string(buffer[..written]);
+		}
+		finally
+		{
+			if (rented is not null) ArrayPool<char>.Shared.Return(rented);
+		}
+	}
 
-			if (leadingZeros == length)
-				return new string(CharacterSet[0], length);
+	void BitGroupEncode(ReadOnlySpan<byte> data, Span<char> output, out int written)
+	{
+		ReadOnlySpan<char> cs = CharacterSet;
+		int bitsPerChar = _bitsPerChar;
+		int charMask = _charMask;
+		int allocLen = GetMaxEncodedLength(data.Length);
 
-			byte[] input = new byte[length];
-			Array.Copy(data, input, length);
+		int bitBuffer = 0, bitsInBuffer = 0, di = 0;
 
-			char[] result = new char[length * 8];
-			int resultIndex = result.Length;
+		for (int i = 0; i < data.Length; i++)
+		{
+			bitBuffer = (bitBuffer << 8) | data[i];
+			bitsInBuffer += 8;
+
+			while (bitsInBuffer >= bitsPerChar)
+			{
+				bitsInBuffer -= bitsPerChar;
+				output[di++] = cs[(bitBuffer >> bitsInBuffer) & charMask];
+			}
+		}
+
+		if (bitsInBuffer > 0)
+			output[di++] = cs[(bitBuffer << (bitsPerChar - bitsInBuffer)) & charMask];
+
+		if (PaddingEnabled)
+		{
+			while (di < allocLen)
+				output[di++] = PaddingChar;
+		}
+
+		written = di;
+	}
+
+	byte[] BitGroupDecode(ReadOnlySpan<char> data)
+	{
+		int dataChars = data.Length;
+		while (dataChars > 0 && data[dataChars - 1] == PaddingChar)
+			dataChars--;
+
+		byte[] result = new byte[dataChars * _bitsPerChar / 8];
+		BitGroupDecode(data[..dataChars], result, out _);
+		return result;
+	}
+
+	void BitGroupDecode(ReadOnlySpan<char> data, Span<byte> output, out int written)
+	{
+		ReadOnlySpan<byte> map = _map;
+		int bitsPerChar = _bitsPerChar;
+
+		int bitBuffer = 0, bitsInBuffer = 0, di = 0;
+
+		for (int i = 0; i < data.Length; i++)
+		{
+			bitBuffer = (bitBuffer << bitsPerChar) | map[data[i]];
+			bitsInBuffer += bitsPerChar;
+
+			while (bitsInBuffer >= 8)
+			{
+				bitsInBuffer -= 8;
+				output[di++] = (byte)((bitBuffer >> bitsInBuffer) & 0xFF);
+			}
+		}
+
+		written = di;
+	}
+
+	// === Arithmetic path (non-power-of-2 bases) ===
+
+	string ArithmeticEncode(ReadOnlySpan<byte> data)
+	{
+		int maxLen = GetMaxEncodedLength(data.Length);
+
+		char[]? rented = null;
+		Span<char> buffer = maxLen <= StackAllocThreshold
+			? stackalloc char[maxLen]
+			: (rented = ArrayPool<char>.Shared.Rent(maxLen));
+
+		try
+		{
+			ArithmeticEncode(data, buffer, out int written);
+			return new string(buffer[..written]);
+		}
+		finally
+		{
+			if (rented is not null) ArrayPool<char>.Shared.Return(rented);
+		}
+	}
+
+	void ArithmeticEncode(ReadOnlySpan<byte> data, Span<char> output, out int written)
+	{
+		int length = data.Length;
+
+		int leadingZeros = 0;
+		while (leadingZeros < length && data[leadingZeros] == 0)
+			leadingZeros++;
+
+		if (leadingZeros == length)
+		{
+			output[..length].Fill(CharacterSet[0]);
+			written = length;
+			return;
+		}
+
+		// Work with a copy for in-place division
+		byte[]? rentedInput = null;
+		Span<byte> input = length <= StackAllocThreshold
+			? stackalloc byte[length]
+			: (rentedInput = ArrayPool<byte>.Shared.Rent(length));
+
+		try
+		{
+			data.CopyTo(input);
+
+			// Build result in reverse into output buffer
+			int resultEnd = output.Length;
 
 			int startIndex = leadingZeros;
 			while (startIndex < length)
@@ -170,31 +290,55 @@ namespace Exyll
 						newStart = i;
 				}
 
-				result[--resultIndex] = CharacterSet[remainder];
+				output[--resultEnd] = CharacterSet[remainder];
 				startIndex = newStart;
 			}
 
 			for (int i = 0; i < leadingZeros; i++)
-				result[--resultIndex] = CharacterSet[0];
+				output[--resultEnd] = CharacterSet[0];
 
-			return new string(result, resultIndex, result.Length - resultIndex);
+			int count = output.Length - resultEnd;
+
+			// Shift to start of output buffer
+			output[resultEnd..].CopyTo(output);
+			written = count;
 		}
-
-		byte[] ArithmeticDecode(string data, int length)
+		finally
 		{
-			char zeroChar = CharacterSet[0];
-			int leadingZeros = 0;
-			while (leadingZeros < length && data[leadingZeros] == zeroChar)
-				leadingZeros++;
+			if (rentedInput is not null) ArrayPool<byte>.Shared.Return(rentedInput);
+		}
+	}
 
-			if (leadingZeros == length)
-				return new byte[length];
+	byte[] ArithmeticDecode(ReadOnlySpan<char> data)
+	{
+		int length = data.Length;
 
-			byte[] digits = new byte[length];
+		char zeroChar = CharacterSet[0];
+		int leadingZeros = 0;
+		while (leadingZeros < length && data[leadingZeros] == zeroChar)
+			leadingZeros++;
+
+		if (leadingZeros == length)
+			return new byte[length];
+
+		// Convert characters to digit values
+		ReadOnlySpan<byte> map = _map;
+		byte[]? rentedDigits = null;
+		Span<byte> digits = length <= StackAllocThreshold
+			? stackalloc byte[length]
+			: (rentedDigits = ArrayPool<byte>.Shared.Rent(length));
+
+		byte[]? rentedResult = null;
+		int resultSize = length * 2;
+		Span<byte> result = resultSize <= StackAllocThreshold
+			? stackalloc byte[resultSize]
+			: (rentedResult = ArrayPool<byte>.Shared.Rent(resultSize));
+
+		try
+		{
 			for (int i = 0; i < length; i++)
-				digits[i] = Map[data[i]];
+				digits[i] = map[data[i]];
 
-			byte[] result = new byte[length * 2];
 			int resultIndex = result.Length;
 
 			int startIndex = leadingZeros;
@@ -219,38 +363,39 @@ namespace Exyll
 			for (int i = 0; i < leadingZeros; i++)
 				result[--resultIndex] = 0;
 
-			int outputLen = result.Length - resultIndex;
-			byte[] output = new byte[outputLen];
-			Array.Copy(result, resultIndex, output, 0, outputLen);
-			return output;
+			return result[resultIndex..].ToArray();
 		}
-
-		static byte[] CreateMap(char[] characterSet)
+		finally
 		{
-			int maxChar = 0;
-			for (int i = 0; i < characterSet.Length; i++)
-			{
-				if (characterSet[i] > maxChar)
-					maxChar = characterSet[i];
-			}
-
-			byte[] map = new byte[maxChar + 1];
-
-			for (byte i = 0; i < characterSet.Length; i++)
-				map[characterSet[i]] = i;
-
-			return map;
-		}
-
-		static int Gcd(int a, int b)
-		{
-			while (b != 0) { int t = b; b = a % b; a = t; }
-			return a;
-		}
-
-		static int Lcm(int a, int b)
-		{
-			return a / Gcd(a, b) * b;
+			if (rentedDigits is not null) ArrayPool<byte>.Shared.Return(rentedDigits);
+			if (rentedResult is not null) ArrayPool<byte>.Shared.Return(rentedResult);
 		}
 	}
+
+	// === Helpers ===
+
+	static byte[] CreateMap(char[] characterSet)
+	{
+		int maxChar = 0;
+		for (int i = 0; i < characterSet.Length; i++)
+		{
+			if (characterSet[i] > maxChar)
+				maxChar = characterSet[i];
+		}
+
+		byte[] map = new byte[maxChar + 1];
+
+		for (byte i = 0; i < characterSet.Length; i++)
+			map[characterSet[i]] = i;
+
+		return map;
+	}
+
+	static int Gcd(int a, int b)
+	{
+		while (b != 0) { int t = b; b = a % b; a = t; }
+		return a;
+	}
+
+	static int Lcm(int a, int b) => a / Gcd(a, b) * b;
 }

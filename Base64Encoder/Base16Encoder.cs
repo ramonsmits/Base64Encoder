@@ -1,7 +1,3 @@
-namespace Exyll
-{
-	public class Base16Encoder : BaseEncoder
-	{
-		public Base16Encoder() : base("0123456789ABCDEF".ToCharArray(), false) { }
-	}
-}
+namespace Exyll;
+
+public class Base16Encoder() : BaseEncoder("0123456789ABCDEF".ToCharArray(), false);

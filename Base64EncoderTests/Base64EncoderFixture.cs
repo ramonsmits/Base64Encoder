@@ -133,8 +133,8 @@ namespace Exyll
 		public void ToBase8_KnownValue()
 		{
 			var encoder = new Base7Encoder();
-			// 0xFF = 11111111 in binary, in 3-bit groups: 011 111 111 = 3 7 7
-			Assert.AreEqual("377", encoder.ToBase(new byte[] { 0xFF }));
+			// 0xFF = 11111111, 3-bit groups MSB-first: 111 111 110 = 7 7 6
+			Assert.AreEqual("776", encoder.ToBase(new byte[] { 0xFF }));
 		}
 
 		// Base62 tests
